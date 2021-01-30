@@ -16,30 +16,29 @@ library(plyr)
 #####
 #####
 
-setwd("E:/suit/rcp85-ssp3")
+setwd("F:/suit/rcp85-ssp3")
 
 #calculate overall suit
 
-#load filter & points shapefile & sample raster
-filter <- read.csv(file="E:/currentcoral/filter.csv",row.names=NULL,header=T,colClasses=c("numeric",rep("NULL",5),"numeric","NULL","NULL","numeric"))
-reef <- st_read("D:/distribution/all_reef_pt.shp")
-r008333 <- raster("E:/bathy/gebco_2020_all.tif")
+#load coral points shapefile & sample raster
+reefs <- st_read("E:/currentcoral/reefs.shp")
+#r008333 <- raster("E:/bathy/gebco_2020_all.tif")
 
 
 
 #load all rasters
 #dhw, oa, storms, pop, land, sst, bathy
 #check they are all same resolution and extent
-#make sure all NAs -> 0's
+#make sure all NAs -> 1's
 #recalculate individual variable suits given filter
 
 
-
+#load sst
+sstfiles <- list.files("E:/sst/rcp85",pattern="_suit.csv$",full.names=T)
 #load dhw
 dhwfiles <- list.files("E:/dhw/rcp85",pattern="_suit.csv$",full.names=T)
 #load land
-landfiles <- list.files("E:/land_hr/ssp3-rcp85",pattern="_suit.csv$",full.names=T)
-landfiles <-landfiles[-1] #we don't need 2005
+landfiles <- list.files("E:/land_hurtt/rcp85",pattern="_suit.csv$",full.names=T)
 #load oa
 oafiles <- list.files("E:/oa/rcp85",pattern="_suit.csv$",full.names=T)
 #load pop
@@ -48,10 +47,10 @@ popfiles <- list.files("E:/pop_hr/ssp3",pattern="_suit.csv$",full.names=T)
 stormfiles <- list.files("E:/storms/rcp85",pattern="_suit.csv$",full.names=T)
 
 #name out files
-csvout <- paste("rcp85_",2000+(1:19+1)*5,"_suit.csv",sep="")
-pointsout <- paste("rcp85_",2000+(1:19+1)*5,"_suit",sep="")
-rasterccout <- paste("rcp85_",2000+(1:19+1)*5,"_coralsuit.tif",sep="")
-rasternewout <- paste("rcp85_",2000+(1:19+1)*5,"_newsuit.tif",sep="")
+csvout <- paste("rcp85_",2000+(1:20)*5,"_suit.csv",sep="")
+pointsout <- paste("rcp85_",2000+(1:20)*5,"_suit",sep="")
+#rasterccout <- paste("rcp85_",2000+(1:19+1)*5,"_coralsuit.tif",sep="")
+#rasternewout <- paste("rcp85_",2000+(1:19+1)*5,"_newsuit.tif",sep="")
 
 
 #load each file per year
@@ -64,38 +63,47 @@ start <- Sys.time()
 cores<- detectCores()-1
 cl <- makeCluster(cores, output="") 
 registerDoParallel(cl)
-for (i in 1:19){
+for (i in 1:20){
+  #sst
+  sst <- read.csv(file=sstfiles[i],row.names=NULL,header=T,
+                  colClasses=c("numeric","NULL","numeric","numeric","NULL","numeric"))
+  names(sst) <- c("pointid","iscoral","ID","sst_suit")
+  sst[is.na(sst)] <- 1
   #dhw
-  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(dhw) <- c("pointid","dhw_suit")
-  dhw[is.na(dhw)] <- 0
+  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(dhw) <- c("ID","dhw_suit")
+  dhw[is.na(dhw)] <- 1
   #land
-  land <- read.csv(file=landfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(land) <- c("pointid","land_suit")
+  land <- read.csv(file=landfiles[i],row.names=NULL,header=T,
+                   colClasses=c(rep("NULL",3),"numeric",rep("NULL",2),"numeric"))
+  names(land) <- c("ID","land_suit")
+  land[is.na(land)] <- 1
   #oa
-  oa <- read.csv(file=oafiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(oa) <- c("pointid","oa_suit")
-  oa[is.na(oa)] <- 0
+  oa <- read.csv(file=oafiles[i],row.names=NULL,header=T,
+                 colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(oa) <- c("ID","oa_suit")
+  oa[is.na(oa)] <- 1
   #pop
-  pop <- read.csv(file=popfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",4),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(pop) <- c("pointid","pop_suit")
+  pop <- read.csv(file=popfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric",rep("NULL",3),"numeric"))
+  names(pop) <- c("ID","pop_suit")
+  pop[is.na(pop)] <- 1
   #storms
-  storms <- read.csv(file=stormfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(storms) <- c("pointid","storm_suit")
-  #join together overall suit. save csv, shapefile, and raster
-  suitdf <- join_all(list(dhw,land,oa,pop,storms,filter),by="pointid")
-  suitdf$suitcoral <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
-  suitdf$suitall <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$sstbathycoral
+    storms <- read.csv(file=stormfiles[i],row.names=NULL,header=T,
+                       colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+    names(storms) <- c("ID","storm_suit")
+    storms[is.na(storms)] <- 1
+    #join together overall suit
+    suitdf <- join_all(list(sst,dhw,land,oa,pop,storms),by="ID")
+    suitdf$suitcoral <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
+    suitdf$suitall <- suitdf$sst_suit *suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit
+
+  #save csv & shapefile
   write.csv(suitdf,csvout[i], row.names=FALSE)
-  suitpt <- merge(reef,suitdf,by="pointid")
+  suitpt <- merge(reefs,suitdf,by="ID")
   st_write(suitpt, dsn = pointsout[i], driver = "ESRI Shapefile")
-  rasterize(suitpt,r008333,field="suitcoral",fun=max,na.rm=T,filename=rasterccout[i],overwrite=T)
-  rasterize(suitpt,r008333,field="suitall",fun=max,na.rm=T,filename=rasternewout[i],overwrite=T)
+  
 }
 
 stopCluster(cl)
@@ -104,17 +112,17 @@ finish-start
 
 
 #get count of suitability
-csvfiles <- list.files("E:/suit/rcp85-ssp3",pattern="suit.csv$",full.names=T)
+csvfiles <- list.files("F:/suit/rcp85-ssp3",pattern="suit.csv$",full.names=T)
 ncsvfiles <- length(csvfiles)
 countcoral<-data.frame()
 countnew<-data.frame()
 for (i in 1:ncsvfiles){
   a <- read.csv(file=csvfiles[i],row.names=NULL,header=T)
   c <- count(a, vars="suitcoral")
-  y <- add_column(c,year=paste0(i*5+2005),.before=T)
+  y <- add_column(c,year=paste0(i*5+2000),.before=T)
   countcoral <- rbind(y,countcoral)
   d <- count(a,vars="suitall")
-  z <- add_column(d,year=paste0(i*5+2005),.before=T)
+  z <- add_column(d,year=paste0(i*5+2000),.before=T)
   countnew <- rbind(z,countnew)
 } 
 
@@ -130,30 +138,29 @@ for (i in 1:ncsvfiles){
 ######
 
 
-setwd("E:/suit/rcp85-ssp5")
+setwd("F:/suit/rcp85-ssp5")
 
 #calculate overall suit
 
-#load filter & points shapefile & sample raster
-filter <- read.csv(file="E:/currentcoral/filter.csv",row.names=NULL,header=T,colClasses=c("numeric",rep("NULL",5),"numeric","NULL","NULL","numeric"))
-reef <- st_read("D:/distribution/all_reef_pt.shp")
-r008333 <- raster("E:/bathy/gebco_2020_all.tif")
+#load coral points shapefile & sample raster
+reefs <- st_read("E:/currentcoral/reefs.shp")
+#r008333 <- raster("E:/bathy/gebco_2020_all.tif")
 
 
 
 #load all rasters
 #dhw, oa, storms, pop, land, sst, bathy
 #check they are all same resolution and extent
-#make sure all NAs -> 0's
+#make sure all NAs -> 1's
 #recalculate individual variable suits given filter
 
 
-
+#load sst
+sstfiles <- list.files("E:/sst/rcp85",pattern="_suit.csv$",full.names=T)
 #load dhw
 dhwfiles <- list.files("E:/dhw/rcp85",pattern="_suit.csv$",full.names=T)
 #load land
-landfiles <- list.files("E:/land_hr/ssp5-rcp85",pattern="_suit.csv$",full.names=T)
-landfiles <-landfiles[-1] #we don't need 2005
+landfiles <- list.files("E:/land_hurtt/rcp85",pattern="_suit.csv$",full.names=T)
 #load oa
 oafiles <- list.files("E:/oa/rcp85",pattern="_suit.csv$",full.names=T)
 #load pop
@@ -162,10 +169,10 @@ popfiles <- list.files("E:/pop_hr/ssp5",pattern="_suit.csv$",full.names=T)
 stormfiles <- list.files("E:/storms/rcp85",pattern="_suit.csv$",full.names=T)
 
 #name out files
-csvout <- paste("rcp85.5_",2000+(1:19+1)*5,"_suit.csv",sep="")
-pointsout <- paste("rcp85.5_",2000+(1:19+1)*5,"_suit",sep="")
-rasterccout <- paste("rcp85.5_",2000+(1:19+1)*5,"_coralsuit.tif",sep="")
-rasternewout <- paste("rcp85.5_",2000+(1:19+1)*5,"_newsuit.tif",sep="")
+csvout <- paste("rcp85_ssp5",2000+(1:20)*5,"_suit.csv",sep="")
+pointsout <- paste("rcp85_ssp5",2000+(1:20)*5,"_suit",sep="")
+#rasterccout <- paste("rcp85_",2000+(1:19+1)*5,"_coralsuit.tif",sep="")
+#rasternewout <- paste("rcp85_",2000+(1:19+1)*5,"_newsuit.tif",sep="")
 
 
 #load each file per year
@@ -178,38 +185,47 @@ start <- Sys.time()
 cores<- detectCores()-1
 cl <- makeCluster(cores, output="") 
 registerDoParallel(cl)
-for (i in 1:19){
+for (i in 1:20){
+  #sst
+  sst <- read.csv(file=sstfiles[i],row.names=NULL,header=T,
+                  colClasses=c("numeric","NULL","numeric","numeric","NULL","numeric"))
+  names(sst) <- c("pointid","iscoral","ID","sst_suit")
+  sst[is.na(sst)] <- 1
   #dhw
-  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(dhw) <- c("pointid","dhw_suit")
-  dhw[is.na(dhw)] <- 0
+  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(dhw) <- c("ID","dhw_suit")
+  dhw[is.na(dhw)] <- 1
   #land
-  land <- read.csv(file=landfiles[i],row.names=NULL,header=F,skip=1,
-                   colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(land) <- c("pointid","land_suit")
+  land <- read.csv(file=landfiles[i],row.names=NULL,header=T,
+                   colClasses=c(rep("NULL",3),"numeric",rep("NULL",2),"numeric"))
+  names(land) <- c("ID","land_suit")
+  land[is.na(land)] <- 1
   #oa
-  oa <- read.csv(file=oafiles[i],row.names=NULL,header=F,skip=1,
-                 colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(oa) <- c("pointid","oa_suit")
-  oa[is.na(oa)] <- 0
+  oa <- read.csv(file=oafiles[i],row.names=NULL,header=T,
+                 colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(oa) <- c("ID","oa_suit")
+  oa[is.na(oa)] <- 1
   #pop
-  pop <- read.csv(file=popfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",4),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(pop) <- c("pointid","pop_suit")
+  pop <- read.csv(file=popfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric",rep("NULL",3),"numeric"))
+  names(pop) <- c("ID","pop_suit")
+  pop[is.na(pop)] <- 1
   #storms
-  storms <- read.csv(file=stormfiles[i],row.names=NULL,header=F,skip=1,
-                     colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(storms) <- c("pointid","storm_suit")
-  #join together overall suit. save csv, shapefile, and raster
-  suitdf <- join_all(list(dhw,land,oa,pop,storms,filter),by="pointid")
-  suitdf$suitcoral <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
-  suitdf$suitall <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$sstbathycoral
+  storms <- read.csv(file=stormfiles[i],row.names=NULL,header=T,
+                     colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(storms) <- c("ID","storm_suit")
+  storms[is.na(storms)] <- 1
+  #join together overall suit
+  suitdf <- join_all(list(sst,dhw,land,oa,pop,storms),by="ID")
+  suitdf$suitcoral <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
+  suitdf$suitall <- suitdf$sst_suit *suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit
+  
+  #save csv & shapefile
   write.csv(suitdf,csvout[i], row.names=FALSE)
-  suitpt <- merge(reef,suitdf,by="pointid")
+  suitpt <- merge(reefs,suitdf,by="ID")
   st_write(suitpt, dsn = pointsout[i], driver = "ESRI Shapefile")
-  rasterize(suitpt,r008333,field="suitcoral",fun=max,na.rm=T,filename=rasterccout[i],overwrite=T)
-  rasterize(suitpt,r008333,field="suitall",fun=max,na.rm=T,filename=rasternewout[i],overwrite=T)
+  
 }
 
 stopCluster(cl)
@@ -218,7 +234,7 @@ finish-start
 
 
 #get count of suitability
-csvfiles <- list.files("E:/suit/rcp85-ssp5",pattern="suit.csv$",full.names=T)
+csvfiles <- list.files("F:/suit/rcp85-ssp5",pattern="suit.csv$",full.names=T)
 ncsvfiles <- length(csvfiles)
 countcoral<-data.frame()
 countnew<-data.frame()
@@ -464,7 +480,7 @@ for (i in 1:ncsvfiles){
 
 #####
 #####
-###historic
+###historic model
 #####
 #####
 
@@ -472,11 +488,8 @@ setwd("E:/suit/hist")
 
 #calculate overall suit
 
-#load filter & points shapefile & sample raster
-filter <- read.csv(file="E:/currentcoral/filter.csv",row.names=NULL,header=T,colClasses=c("numeric",rep("NULL",5),"numeric","NULL","NULL","numeric"))
-reef <- st_read("D:/distribution/all_reef_pt.shp")
-r008333 <- raster("E:/bathy/gebco_2020_all.tif")
-
+#load coral points shapefile & sample raster
+reefs <- st_read("E:/currentcoral/reefs.shp")
 
 
 #load all rasters
@@ -486,72 +499,82 @@ r008333 <- raster("E:/bathy/gebco_2020_all.tif")
 #recalculate individual variable suits given filter
 
 
-#use only overlapping years: 1985 to 2000
+#use historic model years: 1855-2005
+#load sst
+sstfiles <- list.files("E:/sst/historic",pattern="_suit.csv$",full.names=T) 
 #load dhw
-dhwfiles <- list.files("E:/dhw/historic",pattern="_suit.csv$",full.names=T) #from 1985 to 2015
-dhwfiles <- dhwfiles[-c(5:7)] #we don't need 2005,2010 or 2015
+dhwfiles <- list.files("E:/dhw/historic",pattern="_suit.csv$",full.names=T) 
 #load land
-landfiles <- list.files("E:/land_hr/historic",pattern="_suit.csv$",full.names=T) #from 1980 to 2010
-landfiles <-landfiles[-c(1,6:7)] #we don't need 1980, 2005, 2010
+landfiles <- list.files("E:/land_hurtt/historic",pattern="_suit.csv$",full.names=T) 
 #load oa
-oafiles <- list.files("E:/oa/hist",pattern="_suit.csv$",full.names=T) #from 1980 to 2005
-oafiles <- oafiles[-c(1,6)] #we don't need 1980, 2005
+oafiles <- list.files("E:/oa/hist",pattern="_suit.csv$",full.names=T) 
 #load pop
-popfiles <- list.files("E:/pop_hr/historic",pattern="_suit.csv$",full.names=T) #from 1970 to 2000
-popfiles <- popfiles[-c(1:3)] #don't need 1970, 1975, 1980
+popfiles <- list.files("E:/pop_hr/hist_hyde",pattern="_suit.csv$",full.names=T)
 #load storms
-stormfiles <- list.files("E:/storms/historic",pattern="_suit.csv$",full.names=T) #from 1970 to 2015
-stormfiles <- stormfiles[-c(1:3,8:10)] #don't need 1970,1975,1980,2005,2010,2015
+stormfiles <- list.files("E:/storms/historic",pattern="_suit.csv$",full.names=T)
+stormfiles <- stormfiles[-c(1,3,5,7,9,11)] #don't need these years
 
 #name out files
-csvout <- paste("hist_",1980+(1:4)*5,"_suit.csv",sep="")
-pointsout <- paste("hist",1980+(1:4)*5,"_suit",sep="")
-rasterccout <- paste("hist",1980+(1:4)*5,"_coralsuit.tif",sep="")
-rasternewout <- paste("hist",1980+(1:4)*5,"_newsuit.tif",sep="")
+csvout <- paste("hist_",1845+(1:16)*10,"_suit.csv",sep="")
+pointsout <- paste("hist",1845+(1:16)*10,"_suit",sep="")
+
 
 
 #load each file per year
 #count overall suit sites for percentage
 #csv method - multiply columns together. save csv
 #join with shapefile. save
-#rasterize. rotate so Pacific Ocean is centered
-#print raster 
+
 start <- Sys.time()
 cores<- detectCores()-1
 cl <- makeCluster(cores, output="") 
 registerDoParallel(cl)
-for (i in 1:4){
+for (i in 1:length(sstfiles)){
+  #sst
+  sst <- read.csv(file=sstfiles[i],row.names=NULL,header=T,
+                  colClasses=c("numeric","NULL","numeric","numeric","NULL","numeric"))
+  names(sst) <- c("pointid","iscoral","ID","sst_suit")
+  sst[is.na(sst)] <- 1
   #dhw
-  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(dhw) <- c("pointid","dhw_suit")
-  dhw[is.na(dhw)] <- 0
+  dhw <- read.csv(file=dhwfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(dhw) <- c("ID","dhw_suit")
+  dhw[is.na(dhw)] <- 1
   #land
-  land <- read.csv(file=landfiles[i],row.names=NULL,header=F,skip=1,
-                   colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(land) <- c("pointid","land_suit")
+  land <- read.csv(file=landfiles[i],row.names=NULL,header=T,
+                   colClasses=c(rep("NULL",3),"numeric",rep("NULL",3),"numeric","NULL","NULL"))
+  names(land) <- c("ID","land_suit")
+  land[is.na(land)] <- 1
   #oa
-  oa <- read.csv(file=oafiles[i],row.names=NULL,header=F,skip=1,
-                 colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(oa) <- c("pointid","oa_suit")
-  oa[is.na(oa)] <- 0
+  oa <- read.csv(file=oafiles[i],row.names=NULL,header=T,
+                 colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(oa) <- c("ID","oa_suit")
+  oa[is.na(oa)] <- 1
   #pop
-  pop <- read.csv(file=popfiles[i],row.names=NULL,header=F,skip=1,
-                  colClasses=c("numeric",rep("NULL",4),"numeric",rep("NULL",2))) #only keep pointid and suit cols
-  names(pop) <- c("pointid","pop_suit")
-  #storms
-  storms <- read.csv(file=stormfiles[i],row.names=NULL,header=F,skip=1,
-                     colClasses=c("numeric",rep("NULL",3),"numeric",rep("NULL",4))) #only keep pointid and suit cols
-  names(storms) <- c("pointid","storm_suit")
-  #join together overall suit. save csv, shapefile, and raster
-  suitdf <- join_all(list(dhw,land,oa,pop,storms,filter),by="pointid")
-  suitdf$suitcoral <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
-  suitdf$suitall <- suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$sstbathycoral
+  pop <- read.csv(file=popfiles[i],row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric",rep("NULL",3),"numeric"))
+  names(pop) <- c("ID","pop_suit")
+  pop[is.na(pop)] <- 1
+  #if year is >1955, include storms. else don't (storms dataset starts 1955)
+  if (i >= 11) {
+    storms <- read.csv(file=stormfiles[i-10],row.names=NULL,header=T,
+                       colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+    names(storms) <- c("ID","storm_suit")
+    storms[is.na(storms)] <- 1
+    #join together overall suit
+    suitdf <- join_all(list(sst,dhw,land,oa,pop,storms),by="ID")
+    suitdf$suitcoral <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
+    suitdf$suitall <- suitdf$sst_suit *suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit
+  } else {
+    #join together overall suit
+    suitdf <- join_all(list(sst,dhw,land,oa,pop),by="ID")
+    suitdf$suitcoral <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$iscoral
+    suitdf$suitall <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit 
+  }
+  #save csv & shapefile
   write.csv(suitdf,csvout[i], row.names=FALSE)
-  suitpt <- merge(reef,suitdf,by="pointid")
+  suitpt <- merge(reefs,suitdf,by="ID")
   st_write(suitpt, dsn = pointsout[i], driver = "ESRI Shapefile")
-  rasterize(suitpt,r008333,field="suitcoral",fun=max,na.rm=T,filename=rasterccout[i],overwrite=T)
-  rasterize(suitpt,r008333,field="suitall",fun=max,na.rm=T,filename=rasternewout[i],overwrite=T)
 }
 
 stopCluster(cl)
@@ -567,9 +590,92 @@ countnew<-data.frame()
 for (i in 1:ncsvfiles){
   a <- read.csv(file=csvfiles[i],row.names=NULL,header=T)
   c <- count(a, vars="suitcoral")
-  y <- add_column(c,year=paste0(i*5+1980),.before=T)
+  y <- add_column(c,year=paste0(i*10+1845),.before=T)
   countcoral <- rbind(y,countcoral)
   d <- count(a,vars="suitall")
-  z <- add_column(d,year=paste0(i*5+1980),.before=T)
+  z <- add_column(d,year=paste0(i*10+1845),.before=T)
   countnew <- rbind(z,countnew)
 } 
+
+
+
+
+
+#####
+#####
+###empirical
+#####
+#####
+
+setwd("F:/suit/emp")
+
+#calculate overall suit
+
+#load coral points shapefile & sample raster
+reefs <- st_read("E:/currentcoral/reefs.shp")
+
+
+#load all dataframes
+#dhw, oa, storms, pop, land, sst, bathy
+#make sure all NAs -> 0's
+
+
+#use year 2005
+
+#count overall suit sites for percentage
+#csv method - multiply columns together. save csv
+#join with shapefile. save
+
+start <- Sys.time()
+cores<- detectCores()-1
+cl <- makeCluster(cores, output="") 
+registerDoParallel(cl)
+  #sst
+  sst <- read.csv(file="E:/sst/empirical/hist_2005_suit.csv",row.names=NULL,header=T,
+                  colClasses=c("numeric","NULL","numeric","numeric","NULL","numeric"))
+  names(sst) <- c("pointid","iscoral","ID","sst_suit")
+  sst[is.na(sst)] <- 1
+  #dhw
+  dhw <- read.csv(file="E:/dhw/historic/empirical/hist_2005_suit.csv",row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(dhw) <- c("ID","dhw_suit")
+  dhw[is.na(dhw)] <- 1
+  #land
+  land <- read.csv(file="E:/land_hurtt/empirical/emp_2005_suit.csv",row.names=NULL,header=T,
+                   colClasses=c(rep("NULL",3),"numeric",rep("NULL",2),"numeric"))
+  names(land) <- c("ID","land_suit")
+  land[is.na(land)] <- 1
+  #oa
+  oa <- read.csv(file="E:/oa/empirical/emp_2005_suit.csv",row.names=NULL,header=T,
+                 colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(oa) <- c("ID","oa_suit")
+  oa[is.na(oa)] <- 1
+  #pop
+  pop <- read.csv(file="E:/pop_hr/hist_gpw/histgpw_2005_suit.csv",row.names=NULL,header=T,
+                  colClasses=c(rep("NULL",3),"numeric",rep("NULL",3),"numeric"))
+  names(pop) <- c("ID","pop_suit")
+  pop[is.na(pop)] <- 1
+  #storms
+  storms <- read.csv(file="E:/storms/empirical/emp_2005_suit.csv",row.names=NULL,header=T,
+                     colClasses=c(rep("NULL",3),"numeric","NULL","numeric"))
+  names(storms) <- c("ID","storm_suit")
+  storms[is.na(storms)] <- 1
+  #join together overall suit
+  suitdf <- join_all(list(sst,dhw,land,oa,pop,storms),by="ID")
+  suitdf$suitcoral <- suitdf$sst_suit * suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit * suitdf$iscoral
+  suitdf$suitall <- suitdf$sst_suit *suitdf$dhw_suit * suitdf$land_suit * suitdf$oa_suit * suitdf$pop_suit * suitdf$storm_suit
+
+  #save csv & shapefile
+  write.csv(suitdf,"emp_2005_suit.csv", row.names=FALSE)
+  suitpt <- merge(reefs,suitdf,by="ID")
+  st_write(suitpt, dsn = "emp_2005_suit", driver = "ESRI Shapefile")
+stopCluster(cl)
+finish <- Sys.time()
+finish-start
+
+
+#get count of suitability
+  a <- read.csv(file="E:/suit/emp/emp_2005_suit.csv",row.names=NULL,header=T)
+  countcoral <- count(a, vars="suitcoral")
+  countnew <- count(a,vars="suitall")
+
